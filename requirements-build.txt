@@ -1,0 +1,4 @@
+-r requirements.txt
+
+# Only needed to produce a standalone executable
+pyinstaller>=6.0

@@ -1,0 +1,6 @@
+# Runtime
+PyQt6>=6.5
+
+# Optional: enables the one-click Outlook draft on Windows.
+# Without it, the Email action opens a formatted page in your browser instead.
+pywin32>=306 ; sys_platform == "win32"
