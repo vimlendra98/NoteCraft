@@ -1,0 +1,31 @@
+# PyInstaller
+build/
+dist/
+*.spec
+NoteCraft.ico
+NoteCraft-256.png
+NoteCraft-512.png
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# NoteCraft runtime data (never commit notes)
+*.db
+*.db-wal
+*.db-shm
+attachments/
+error.log
+unsaved-*.txt
+*-backup-*.zip
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
