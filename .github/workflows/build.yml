@@ -1,0 +1,114 @@
+name: Build Windows app
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-build.txt
+
+      - name: Sanity check the source
+        run: |
+          python -m pip install pyflakes
+          python -m pyflakes notecraft.py
+          python -m py_compile notecraft.py
+
+      - name: Draw the application icon
+        run: python notecraft.py --export-icon NoteCraft.ico
+
+      - name: Build
+        run: >
+          python -m PyInstaller --noconfirm --clean --windowed
+          --name NoteCraft --icon NoteCraft.ico
+          --exclude-module PyQt6.QtNetwork --exclude-module PyQt6.QtPrintSupport
+          --exclude-module PyQt6.QtOpenGL --exclude-module PyQt6.QtOpenGLWidgets
+          --exclude-module PyQt6.QtQml --exclude-module PyQt6.QtQuick
+          --exclude-module PyQt6.QtQuick3D --exclude-module PyQt6.QtQuickWidgets
+          --exclude-module PyQt6.QtWebEngineCore --exclude-module PyQt6.QtWebEngineWidgets
+          --exclude-module PyQt6.QtWebChannel --exclude-module PyQt6.QtWebSockets
+          --exclude-module PyQt6.QtMultimedia --exclude-module PyQt6.QtMultimediaWidgets
+          --exclude-module PyQt6.QtSql --exclude-module PyQt6.QtTest
+          --exclude-module PyQt6.QtDesigner --exclude-module PyQt6.QtHelp
+          --exclude-module PyQt6.QtCharts --exclude-module PyQt6.QtDataVisualization
+          --exclude-module PyQt6.QtBluetooth --exclude-module PyQt6.QtNfc
+          --exclude-module PyQt6.QtPositioning --exclude-module PyQt6.QtSensors
+          --exclude-module PyQt6.QtSerialPort --exclude-module PyQt6.QtRemoteObjects
+          --exclude-module PyQt6.QtTextToSpeech --exclude-module PyQt6.QtPdf
+          --exclude-module PyQt6.QtPdfWidgets --exclude-module PyQt6.QtXml
+          --exclude-module PyQt6.QtSvgWidgets
+          --exclude-module tkinter --exclude-module numpy --exclude-module matplotlib
+          --exclude-module PIL --exclude-module pandas --exclude-module scipy
+          --exclude-module unittest --exclude-module doctest --exclude-module pydoc_data
+          --exclude-module lib2to3 --exclude-module idlelib --exclude-module setuptools
+          --exclude-module pip --exclude-module smtplib --exclude-module ftplib
+          notecraft.py
+
+      - name: Strip Qt libraries NoteCraft never loads
+        shell: pwsh
+        run: |
+          $bin = "dist\NoteCraft\_internal\PyQt6\Qt6\bin"
+          $drop = @("opengl32sw.dll", "d3dcompiler_47.dll", "Qt6Pdf.dll",
+                    "Qt6Network.dll", "Qt6Qml*.dll", "Qt6Quick*.dll")
+          foreach ($pattern in $drop) {
+            Remove-Item "$bin\$pattern" -Force -ErrorAction SilentlyContinue
+          }
+          Remove-Item "dist\NoteCraft\_internal\PyQt6\Qt6\translations" `
+            -Recurse -Force -ErrorAction SilentlyContinue
+          "Bundle size: {0:N1} MB" -f ((Get-ChildItem dist\NoteCraft -Recurse |
+            Measure-Object -Property Length -Sum).Sum / 1MB)
+
+      - name: Verify the executable starts
+        shell: pwsh
+        run: |
+          # --export-icon boots Qt headlessly and exits, so a broken bundle
+          # (a stripped plugin, a missing DLL) fails here rather than for a user.
+          $env:QT_QPA_PLATFORM = "offscreen"
+          & "dist\NoteCraft\NoteCraft.exe" --export-icon "$env:TEMP\smoke.ico"
+          if ($LASTEXITCODE -ne 0) { throw "NoteCraft.exe failed to start" }
+          if (-not (Test-Path "$env:TEMP\smoke.ico")) { throw "no icon produced" }
+          Write-Host "Executable starts cleanly."
+
+      - name: Package
+        shell: pwsh
+        run: Compress-Archive -Path dist\NoteCraft\* -DestinationPath NoteCraft-windows.zip
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NoteCraft-windows
+          path: NoteCraft-windows.zip
+          retention-days: 30
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: NoteCraft-windows.zip
+          generate_release_notes: true
+          body: |
+            Download `NoteCraft-windows.zip`, extract it anywhere, and run `NoteCraft.exe`.
+
+            No installer and no admin rights needed. Your notes are stored in
+            `%APPDATA%\NoteCraft\`, so upgrading is just replacing the folder.
