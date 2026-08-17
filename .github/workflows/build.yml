@@ -84,11 +84,18 @@ jobs:
         run: |
           # --export-icon boots Qt headlessly and exits, so a broken bundle
           # (a stripped plugin, a missing DLL) fails here rather than for a user.
+          # A windowed exe detaches from the console, so $LASTEXITCODE is not
+          # trustworthy: Start-Process -Wait gives a real code, and the produced
+          # file is the honest proof that Qt initialised.
           $env:QT_QPA_PLATFORM = "offscreen"
-          & "dist\NoteCraft\NoteCraft.exe" --export-icon "$env:TEMP\smoke.ico"
-          if ($LASTEXITCODE -ne 0) { throw "NoteCraft.exe failed to start" }
-          if (-not (Test-Path "$env:TEMP\smoke.ico")) { throw "no icon produced" }
-          Write-Host "Executable starts cleanly."
+          $icon = Join-Path $env:TEMP "smoke.ico"
+          Remove-Item $icon -Force -ErrorAction SilentlyContinue
+          $proc = Start-Process -FilePath "dist\NoteCraft\NoteCraft.exe" `
+            -ArgumentList "--export-icon", $icon -Wait -PassThru -NoNewWindow
+          if (-not (Test-Path $icon)) {
+            throw "NoteCraft.exe produced no icon - the bundle is broken"
+          }
+          Write-Host "Executable starts cleanly (exit code $($proc.ExitCode))."
 
       - name: Package
         shell: pwsh
